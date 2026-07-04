@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap};
 use std::process::exit;
 
 macro_rules! paint {
@@ -201,9 +201,23 @@ fn print_grid(mut grid: u64) {
     }
 }
 
-fn fill(regions: [u64; MAX_REGIONS], num_regions: usize, placements: &mut [u64; NUM_PIECES], is_placed: u64, num_placed: usize) {
-    fn fill_region(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, placements: &mut [u64; NUM_PIECES], is_placed: u64, num_placed: usize) {
+#[derive(PartialEq, Eq, Hash)]
+struct Exploration {
+    region: u64, // we explored ways of covering `region`...
+    is_placed: u64, // ...with pieces that hadn't been placed according to `is_placed`
+}
+
+// Returns the number of ways in which all of these regions can be filled with the pieces available
+fn fill(regions: [u64; MAX_REGIONS], num_regions: usize, placements: &mut [u64; NUM_PIECES], is_placed: u64, num_placed: usize, cache: &mut HashMap<Exploration, u64>, flag: bool) -> u64 {
+    // Returns the number of ways in which regions[region_index..num_regions) can be filled with the pieces available
+    fn fill_region(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, placements: &mut [u64; NUM_PIECES], is_placed: u64, num_placed: usize, cache: &mut HashMap<Exploration, u64>, flag: bool) -> u64 {
         let spaces = regions[region_index];
+        // Check whether this state has been explored already
+        if let Some(n) = cache.get(&Exploration { region: spaces, is_placed }) {
+            return *n;
+        }
+        // Keep track of the number of ways we've found
+        let mut num_ways = 0;
         // Choose a piece to place
         for piece_index in 0..NUM_ALL_PIECES {
             if is_placed & (1 << piece_index) != 0 { continue }
@@ -217,22 +231,15 @@ fn fill(regions: [u64; MAX_REGIONS], num_regions: usize, placements: &mut [u64; 
                     if piece | spaces == spaces {
                         // There is room for the piece here
                         placements[num_placed] = piece;
+                        if flag { println!("Placed first piece {}", piece) }
                         if spaces & !piece == 0 {
                             // This region has been filled
                             if region_index + 1 >= num_regions {
                                 // All regions have been filled
-                                if num_placed == 9 {
-                                    // We've filled the entire thing!
-                                    println!("Found solution!");
-                                    for j in 0..NUM_PIECES {
-                                        println!("Placement {} = {}", j, placements[j]);
-                                        print_grid(placements[j]);
-                                    }
-                                    exit(0);
-                                }
+                                num_ways += 1;
                             } else {
                                 // Fill the next one
-                                fill_region(regions, num_regions, region_index + 1, placements, is_placed | PIECE_FAMILIES[piece_index], num_placed + 1);
+                                num_ways += fill_region(regions, num_regions, region_index + 1, placements, is_placed | PIECE_FAMILIES[piece_index], num_placed + 1, cache, false);
                             }
                         } else {
                             // Split the grid into regions
@@ -287,7 +294,7 @@ fn fill(regions: [u64; MAX_REGIONS], num_regions: usize, placements: &mut [u64; 
                             indices.sort_by_key(|i| region_sizes[*i]);
                             // Fill all these regions
                             let sorted_regions: [u64; MAX_REGIONS] = core::array::from_fn(|i| new_regions[indices[i]]);
-                            fill(sorted_regions, new_num_regions, placements, is_placed | PIECE_FAMILIES[piece_index], num_placed + 1);
+                            num_ways += fill(sorted_regions, new_num_regions, placements, is_placed | PIECE_FAMILIES[piece_index], num_placed + 1, cache, false);
                         }
                     }
                     piece <<= 1;
@@ -296,14 +303,19 @@ fn fill(regions: [u64; MAX_REGIONS], num_regions: usize, placements: &mut [u64; 
                 y_base <<= 7;
             }
         }
+        // Write to the cache
+        cache.insert(Exploration { region: spaces, is_placed }, num_ways);
+        num_ways
     }
 
-    fill_region(&regions, num_regions, 0, placements, is_placed, num_placed);
+    fill_region(&regions, num_regions, 0, placements, is_placed, num_placed, cache, flag)
 }
 
 fn main() {
     let mut regions: [u64; MAX_REGIONS] = [0; MAX_REGIONS];
     regions[0] = TO_FILL;
     let mut placements = [0u64; NUM_PIECES];
-    fill(regions, 1, &mut placements, 0, 0);
+    let mut cache = HashMap::new();
+    let num_ways = fill(regions, 1, &mut placements, 0, 0, &mut cache, true);
+    println!("num_ways = {}", num_ways);
 }
