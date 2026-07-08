@@ -182,6 +182,7 @@ const NUM_ALL_PIECES: usize = 54;
 const MAX_REGIONS: usize = 10;
 const FIRST_COL: u64 = paint!(0, 7, 14, 21, 28, 35, 42, 49);
 const LAST_COL: u64 = paint!(20, 27, 34, 41, 48);
+const FACTORIALS: [u128; MAX_REGIONS + 1] = [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800];
 
 // Has 1s in the spaces we need to fill
 const TO_FILL: u64 = (1 << 56) - 1 - (1 << 6) - (1 << 13) - (1 << 53) + (1 << 49) - (THURSDAY + day(2) + JULY);
@@ -303,7 +304,7 @@ fn fill(regions: [u64; MAX_REGIONS], num_regions: usize, region_index: usize, pl
                         indices.sort_by_key(|i| region_sizes[*i]);
                         // Fill all these regions
                         let sorted_regions: [u64; MAX_REGIONS] = core::array::from_fn(|i| new_regions[indices[i]]);
-                        num_ways += fill(sorted_regions, new_num_regions, 0, placements, is_placed | PIECE_FAMILIES[piece_index], num_placed + 1, cache, false, file);
+                        num_ways += FACTORIALS[new_num_regions] * fill(sorted_regions, new_num_regions, 0, placements, is_placed | PIECE_FAMILIES[piece_index], num_placed + 1, cache, false, file);
                     }
                 }
                 piece <<= 1;
