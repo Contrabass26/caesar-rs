@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 
@@ -182,10 +182,14 @@ const NUM_ALL_PIECES: usize = 54;
 const MAX_REGIONS: usize = 10;
 const FIRST_COL: u64 = paint!(0, 7, 14, 21, 28, 35, 42, 49);
 const LAST_COL: u64 = paint!(20, 27, 34, 41, 48);
-const FACTORIALS: [u128; MAX_REGIONS + 1] = [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800];
+// const PRIMES: [u128; NUM_ALL_PIECES] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251];
+// const PLACEMENT_POWERS: [u128; NUM_PIECES] = [1, 3024, 9144576, 27653197824, 83623270219776, 252876769144602624, 764699349893278334976, 2312450834077273684967424, 6992851322249675623341490176, 21146382398483019084984666292224];
+const FAMILY_STARTS: [usize; NUM_PIECES] = [0, 4, 8, 16, 20, 24, 32, 40, 48, 52];
+const FAMILY_SIZES: [usize; NUM_PIECES] = [4, 4, 8, 4, 4, 8, 8, 8, 4, 2];
+const IS_FIVE: [bool; NUM_PIECES] = [true, true, true, false, true, true, false, true, true, false];
 
 // Has 1s in the spaces we need to fill
-const TO_FILL: u64 = (1 << 56) - 1 - (1 << 6) - (1 << 13) - (1 << 53) + (1 << 49) - (THURSDAY + day(2) + JULY);
+const TO_FILL: u64 = (1 << 56) - 1 - (1 << 6) - (1 << 13) - (1 << 53) + (1 << 49) - (THURSDAY + day(9) + JULY);
 
 fn print_grid(mut grid: u64) {
     for y in 0..=7 {
@@ -203,57 +207,70 @@ fn print_grid(mut grid: u64) {
     }
 }
 
+fn print_solution(mut placements: [u64; NUM_PIECES]) {
+    for y in 0..=7 {
+        for i in 0..NUM_PIECES {
+            for x in 0..=6 {
+                if x == 6 && (y == 0 || y == 1) || y == 7 && x <= 3 {
+                    print!(" ");
+                } else if placements[i] & 1 == 1 {
+                    print!("\u{25A0}");
+                } else {
+                    print!("\u{25A1}");
+                }
+                placements[i] >>= 1;
+            }
+            print!("    ");
+        }
+        println!();
+    }
+}
+
 #[derive(PartialEq, Eq, Hash)]
 struct Exploration {
     region: u64, // we explored ways of covering `region`...
-    is_placed: u64, // ...with pieces that hadn't been placed according to `is_placed`
+    placements: u128, // ...having made placements encoded by `placements`
 }
 
 // Returns the number of ways in which regions[region_index..num_regions) can be filled with the pieces available
-fn fill(regions: [u64; MAX_REGIONS], num_regions: usize, region_index: usize, placements: &mut [u64; NUM_PIECES], is_placed: u64, num_placed: usize, cache: &mut HashMap<Exploration, u128>, flag: bool, file: &mut File) -> u128 {
+fn fill(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, placements: &mut [u64; NUM_PIECES], num_placed: usize, flag: bool, file: &mut File) -> u64 {
     let spaces = regions[region_index];
-    // Check whether this state has been explored already
-    if let Some(n) = cache.get(&Exploration { region: spaces, is_placed }) {
-        return *n;
-    }
     // Keep track of the number of ways we've found
     let mut num_ways = 0;
-    // Choose a piece to place
-    for piece_index in 0..NUM_ALL_PIECES {
-        if is_placed & (1 << piece_index) != 0 { continue }
+    // Choose a piece configuration to place
+    let family_size = FAMILY_SIZES[num_placed];
+    let family_start = FAMILY_STARTS[num_placed];
+    for piece_index in family_start..(family_start + family_size) {
         let base_piece = PIECES[piece_index];
         // Choose a location for it
         let mut y_base = base_piece;
         // We don't actually need to try the bottom row: no piece can start there
-        for _y in 0..=6 {
+        for y in 0..=6 {
             let mut piece = y_base;
+            let mut x = 0;
             loop {
                 if piece | spaces == spaces {
                     // There is room for the piece here
                     placements[num_placed] = piece;
-                    if flag { println!("Placed first piece {}", piece) }
+                    let new_num_placed = num_placed + 1;
+                    // if flag { println!("Placed first piece {}", piece) }
                     if spaces & !piece == 0 {
                         // This region has been filled
                         if region_index + 1 >= num_regions {
                             // All regions have been filled
                             num_ways += 1;
-                            if num_placed == 9 {
-                                let mut message = String::from("Found solution!");
-                                for j in 0..num_placed + 1 {
-                                    message = message + &" " + placements[j].to_string().as_str();
-                                }
-                                message += &"\n";
-                                print!("{}", message);
-                                file.write_all(message.as_bytes()).expect("Failed to write to file");
+                            if new_num_placed == 10 {
+                                println!("Found solution!");
+                                print_solution(*placements);
                             }
                         } else {
                             // Fill the next one
-                            num_ways += fill(regions, num_regions, region_index + 1, placements, is_placed | PIECE_FAMILIES[piece_index], num_placed + 1, cache, false, file);
+                            num_ways += fill(regions, num_regions, region_index + 1, placements, new_num_placed, false, file);
                         }
                     } else {
                         // Split the grid into regions
                         let mut new_regions = [0u64; MAX_REGIONS];
-                        let mut region_sizes = [i32::MAX; MAX_REGIONS];
+                        let mut region_sizes = [usize::MAX; MAX_REGIONS];
                         let mut new_num_regions = 0;
                         {
                             let mut covered = !spaces | piece; // the cells that can't be added to a new region
@@ -299,22 +316,59 @@ fn fill(regions: [u64; MAX_REGIONS], num_regions: usize, region_index: usize, pl
                                 new_num_regions += 1;
                             }
                         }
-                        // Sort the regions by size
-                        let mut indices: [usize; MAX_REGIONS] = core::array::from_fn(|i| i);
-                        indices.sort_by_key(|i| region_sizes[*i]);
-                        // Fill all these regions
-                        let sorted_regions: [u64; MAX_REGIONS] = core::array::from_fn(|i| new_regions[indices[i]]);
-                        num_ways += FACTORIALS[new_num_regions] * fill(sorted_regions, new_num_regions, 0, placements, is_placed | PIECE_FAMILIES[piece_index], num_placed + 1, cache, false, file);
+                        // Find how many 4s and 5s there are
+                        let mut four = 0;
+                        for i in new_num_placed..NUM_PIECES {
+                            if !IS_FIVE[i] { four += 1 }
+                        }
+                        let five = NUM_PIECES - new_num_placed - four;
+                        // Check that all the region sizes can be made with this combination of piece sizes
+                        let mut is_possible = true;
+                        'size_check: for i in 0..new_num_regions {
+                            let size = region_sizes[i];
+                            for n in 0..=four {
+                                let m = NUM_PIECES - new_num_placed - n;
+                                if m > five { continue }
+                                let total = n * 4 + m * 5;
+                                if total == size { continue 'size_check }
+                                if total > size {
+                                    is_possible = false;
+                                    break 'size_check;
+                                }
+                            }
+                            is_possible = false;
+                            break 'size_check;
+                        }
+                        if is_possible {
+                            // Try all possible orders for filling the regions
+                            fn permute(permutation: &mut [u64; MAX_REGIONS], is_used: u16, num_used: usize, regions: &[u64; MAX_REGIONS], num_regions: usize, placements: &mut [u64; NUM_PIECES], num_placed: usize, file: &mut File, num_ways: &mut u64) {
+                                // Find a region that isn't in the permutation yet
+                                for i in 0..num_regions {
+                                    if is_used & (1 << i) != 0 { continue }
+                                    permutation[num_used] = regions[i];
+                                    if num_used + 1 == num_regions {
+                                        // Submit this permutation
+                                        *num_ways += fill(permutation, num_regions, 0, placements, num_placed, false, file);
+                                    } else {
+                                        // Continue adding to the permutation
+                                        permute(permutation, is_used | (1 << i), num_used + 1, regions, num_regions, placements, num_placed, file, num_ways);
+                                    }
+                                }
+                            }
+                            let mut sorted_regions = [0; MAX_REGIONS];
+                            permute(&mut sorted_regions, 0, 0, &new_regions, new_num_regions, placements, new_num_placed, file, &mut num_ways);
+                        } else {
+                            // println!("Rejected for bad region size");
+                        }
                     }
                 }
                 piece <<= 1;
+                x += 1;
                 if piece & FIRST_COL != 0 { break }
             }
             y_base <<= 7;
         }
     }
-    // Write to the cache
-    cache.insert(Exploration { region: spaces, is_placed }, num_ways);
     num_ways
 }
 
@@ -322,8 +376,7 @@ fn main() {
     let mut regions: [u64; MAX_REGIONS] = [0; MAX_REGIONS];
     regions[0] = TO_FILL;
     let mut placements = [0u64; NUM_PIECES];
-    let mut cache = HashMap::new();
     let mut file = File::create("log.txt").expect("Failed to create File");
-    let num_ways = fill(regions, 1, 0, &mut placements, 0, 0, &mut cache, true, &mut file);
+    let num_ways = fill(&regions, 1, 0, &mut placements, 0, true, &mut file);
     println!("num_ways = {}", num_ways);
 }
