@@ -1,5 +1,7 @@
+use std::{array, thread};
 use std::fs::File;
 use std::io::Write;
+use std::sync::mpsc;
 
 macro_rules! paint {
     ($s:expr) => {
@@ -301,21 +303,62 @@ fn count_ways(weekday: u64, day: u64, month: u64) -> usize {
     fill(&regions, 1, 0, &mut placements, 0)
 }
 
+const NUM_THREADS: usize = 15;
+const NUM_PUZZLES: usize = 7 * 31 * 12;
+const PUZZLES_PER_THREAD: usize = NUM_PUZZLES / NUM_THREADS;
+
 fn count_all() {
-    let mut file = File::create("log.txt").expect("Failed to create log file");
-    let mut regions: [u64; MAX_REGIONS] = [0; MAX_REGIONS];
-    let mut placements = [0u64; NUM_PIECES];
-    for i in 0..7usize {
-        for j in 0..31usize {
-            for k in 0..12usize {
+    #[derive(Copy, Clone)]
+    struct PuzzleResult {
+        i: usize,
+        j: usize,
+        k: usize,
+        num_ways: usize,
+    }
+
+    let (tx, rx) = mpsc::channel();
+
+    let worker_handles: [_; NUM_THREADS] = array::from_fn(|n| {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let mut regions: [u64; MAX_REGIONS] = [0; MAX_REGIONS];
+            let mut placements = [0u64; NUM_PIECES];
+            let start = n * PUZZLES_PER_THREAD;
+            let end = if n == (NUM_THREADS - 1) { NUM_PUZZLES } else { start + PUZZLES_PER_THREAD };
+            let mut i = start / (31 * 12);
+            let mut j = (start % (31 * 12)) / 12;
+            let mut k = start % 12;
+            for _input in start..end {
                 regions[0] = BASE_TO_FILL & !(WEEKDAYS[i] | day(j) | MONTHS[k]);
                 let num_ways = fill(&regions, 1, 0, &mut placements, 0);
-                let message = format!("{}-{}-{} = {}\n", i, j, k, num_ways);
-                print!("{}", message);
-                file.write(message.as_bytes()).expect("Failed to write to file");
+                tx.send(PuzzleResult { i, j, k, num_ways }).expect("Failed to send result");
+                k += 1;
+                if k >= 12 {
+                    k = 0;
+                    j += 1;
+                    if j >= 31 {
+                        j = 0;
+                        i += 1;
+                    }
+                }
             }
+        })
+    });
+
+    let collector_handle = thread::spawn(move || {
+        let mut file = File::create("log.txt").expect("Failed to create log file");
+        for _input in 0..NUM_PUZZLES {
+            let result = rx.recv().expect("Failed to receive result");
+            let message = format!("{}-{}-{} = {}\n", result.i, result.j, result.k, result.num_ways);
+            print!("{}", message);
+            file.write(message.as_bytes()).expect("Failed to write to file");
         }
+    });
+
+    for handle in worker_handles {
+        handle.join().expect("Failed to join worker thread");
     }
+    collector_handle.join().expect("Failed to join collector thread");
 }
 
 fn main() {
