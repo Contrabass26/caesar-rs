@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::Write;
+
 macro_rules! paint {
     ($s:expr) => {
         (1 << $s)
@@ -182,8 +185,8 @@ fn fill(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, p
                             // All regions have been filled
                             num_ways += 1;
                             if new_num_placed == 10 {
-                                println!("Found solution!");
-                                print_solution(*placements);
+                                // println!("Found solution!");
+                                // print_solution(*placements);
                             }
                         } else {
                             // Fill the next one
@@ -298,7 +301,23 @@ fn count_ways(weekday: u64, day: u64, month: u64) -> usize {
     fill(&regions, 1, 0, &mut placements, 0)
 }
 
+fn count_all() {
+    let mut file = File::create("log.txt").expect("Failed to create log file");
+    let mut regions: [u64; MAX_REGIONS] = [0; MAX_REGIONS];
+    let mut placements = [0u64; NUM_PIECES];
+    for i in 0..7usize {
+        for j in 0..31usize {
+            for k in 0..12usize {
+                regions[0] = BASE_TO_FILL & !(WEEKDAYS[i] | day(j) | MONTHS[k]);
+                let num_ways = fill(&regions, 1, 0, &mut placements, 0);
+                let message = format!("{}-{}-{} = {}\n", i, j, k, num_ways);
+                print!("{}", message);
+                file.write(message.as_bytes()).expect("Failed to write to file");
+            }
+        }
+    }
+}
+
 fn main() {
-    let num_ways = count_ways(THURSDAY, day(8), JULY);
-    println!("num_ways = {}", num_ways);
+    count_all();
 }
