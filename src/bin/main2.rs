@@ -346,10 +346,10 @@ fn count_all() {
     });
 
     let collector_handle = thread::spawn(move || {
-        let mut file = File::create("log.txt").expect("Failed to create log file");
+        let mut file = File::create("log.csv").expect("Failed to create log file");
         for _input in 0..NUM_PUZZLES {
             let result = rx.recv().expect("Failed to receive result");
-            let message = format!("{}-{}-{} = {}\n", result.i, result.j, result.k, result.num_ways);
+            let message = format!("{},{},{},{}\n", result.i, result.j, result.k, result.num_ways);
             print!("{}", message);
             file.write(message.as_bytes()).expect("Failed to write to file");
         }
