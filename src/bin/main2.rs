@@ -1,7 +1,3 @@
-use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::Write;
-
 macro_rules! paint {
     ($s:expr) => {
         (1 << $s)
@@ -24,8 +20,9 @@ const SEPTEMBER: u64 = 1 << 9;
 const OCTOBER: u64 = 1 << 10;
 const NOVEMBER: u64 = 1 << 11;
 const DECEMBER: u64 = 1 << 12;
+const MONTHS: [u64; 12] = [JANUARY, FEBRUARY, MARCH, APRIL, MAY, JUNE, JULY, AUGUST, SEPTEMBER, OCTOBER, NOVEMBER, DECEMBER];
 
-const fn day(i: usize) -> u64 { 1 << (i + 13) }
+const fn day(i: usize) -> u64 { 1 << (i + 14) }
 
 const MONDAY: u64 = 1 << 46;
 const TUESDAY: u64 = 1 << 47;
@@ -34,6 +31,7 @@ const THURSDAY: u64 = 1 << 53;
 const FRIDAY: u64 = 1 << 54;
 const SATURDAY: u64 = 1 << 55;
 const SUNDAY: u64 = 1 << 45;
+const WEEKDAYS: [u64; 7] = [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY];
 
 const PIECES: [u64; 54] = [
     // T
@@ -111,85 +109,16 @@ const PIECES: [u64; 54] = [
     paint!(0, 1, 2, 3),
 ];
 
-const PIECE_FAMILIES: [u64; 54] = [
-    0b1111 << 0,
-    0b1111 << 0,
-    0b1111 << 0,
-    0b1111 << 0,
-
-    0b1111 << 4,
-    0b1111 << 4,
-    0b1111 << 4,
-    0b1111 << 4,
-
-    0b11111111 << 8,
-    0b11111111 << 8,
-    0b11111111 << 8,
-    0b11111111 << 8,
-    0b11111111 << 8,
-    0b11111111 << 8,
-    0b11111111 << 8,
-    0b11111111 << 8,
-
-    0b1111 << 16,
-    0b1111 << 16,
-    0b1111 << 16,
-    0b1111 << 16,
-
-    0b1111 << 20,
-    0b1111 << 20,
-    0b1111 << 20,
-    0b1111 << 20,
-
-    0b11111111 << 24,
-    0b11111111 << 24,
-    0b11111111 << 24,
-    0b11111111 << 24,
-    0b11111111 << 24,
-    0b11111111 << 24,
-    0b11111111 << 24,
-    0b11111111 << 24,
-
-    0b11111111 << 32,
-    0b11111111 << 32,
-    0b11111111 << 32,
-    0b11111111 << 32,
-    0b11111111 << 32,
-    0b11111111 << 32,
-    0b11111111 << 32,
-    0b11111111 << 32,
-
-    0b11111111 << 40,
-    0b11111111 << 40,
-    0b11111111 << 40,
-    0b11111111 << 40,
-    0b11111111 << 40,
-    0b11111111 << 40,
-    0b11111111 << 40,
-    0b11111111 << 40,
-
-    0b1111 << 48,
-    0b1111 << 48,
-    0b1111 << 48,
-    0b1111 << 48,
-
-    0b11 << 52,
-    0b11 << 52,
-];
-
 const NUM_PIECES: usize = 10;
-const NUM_ALL_PIECES: usize = 54;
 const MAX_REGIONS: usize = 10;
 const FIRST_COL: u64 = paint!(0, 7, 14, 21, 28, 35, 42, 49);
 const LAST_COL: u64 = paint!(20, 27, 34, 41, 48);
-// const PRIMES: [u128; NUM_ALL_PIECES] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251];
-// const PLACEMENT_POWERS: [u128; NUM_PIECES] = [1, 3024, 9144576, 27653197824, 83623270219776, 252876769144602624, 764699349893278334976, 2312450834077273684967424, 6992851322249675623341490176, 21146382398483019084984666292224];
 const FAMILY_STARTS: [usize; NUM_PIECES] = [0, 4, 8, 16, 20, 24, 32, 40, 48, 52];
 const FAMILY_SIZES: [usize; NUM_PIECES] = [4, 4, 8, 4, 4, 8, 8, 8, 4, 2];
 const IS_FIVE: [bool; NUM_PIECES] = [true, true, true, false, true, true, false, true, true, false];
 
 // Has 1s in the spaces we need to fill
-const TO_FILL: u64 = (1 << 56) - 1 - (1 << 6) - (1 << 13) - (1 << 53) + (1 << 49) - (THURSDAY + day(9) + JULY);
+const BASE_TO_FILL: u64 = (1 << 56) - 1 - (1 << 6) - (1 << 13) - (1 << 53) + (1 << 49);
 
 fn print_grid(mut grid: u64) {
     for y in 0..=7 {
@@ -226,14 +155,8 @@ fn print_solution(mut placements: [u64; NUM_PIECES]) {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
-struct Exploration {
-    region: u64, // we explored ways of covering `region`...
-    placements: u128, // ...having made placements encoded by `placements`
-}
-
 // Returns the number of ways in which regions[region_index..num_regions) can be filled with the pieces available
-fn fill(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, placements: &mut [u64; NUM_PIECES], num_placed: usize, flag: bool, file: &mut File) -> u64 {
+fn fill(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, placements: &mut [u64; NUM_PIECES], num_placed: usize) -> usize {
     let spaces = regions[region_index];
     // Keep track of the number of ways we've found
     let mut num_ways = 0;
@@ -245,9 +168,8 @@ fn fill(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, p
         // Choose a location for it
         let mut y_base = base_piece;
         // We don't actually need to try the bottom row: no piece can start there
-        for y in 0..=6 {
+        for _y in 0..=6 {
             let mut piece = y_base;
-            let mut x = 0;
             loop {
                 if piece | spaces == spaces {
                     // There is room for the piece here
@@ -265,7 +187,7 @@ fn fill(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, p
                             }
                         } else {
                             // Fill the next one
-                            num_ways += fill(regions, num_regions, region_index + 1, placements, new_num_placed, false, file);
+                            num_ways += fill(regions, num_regions, region_index + 1, placements, new_num_placed);
                         }
                     } else {
                         // Split the grid into regions
@@ -341,29 +263,26 @@ fn fill(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, p
                         }
                         if is_possible {
                             // Try all possible orders for filling the regions
-                            fn permute(permutation: &mut [u64; MAX_REGIONS], is_used: u16, num_used: usize, regions: &[u64; MAX_REGIONS], num_regions: usize, placements: &mut [u64; NUM_PIECES], num_placed: usize, file: &mut File, num_ways: &mut u64) {
+                            fn permute(permutation: &mut [u64; MAX_REGIONS], is_used: u16, num_used: usize, regions: &[u64; MAX_REGIONS], num_regions: usize, placements: &mut [u64; NUM_PIECES], num_placed: usize, num_ways: &mut usize) {
                                 // Find a region that isn't in the permutation yet
                                 for i in 0..num_regions {
                                     if is_used & (1 << i) != 0 { continue }
                                     permutation[num_used] = regions[i];
                                     if num_used + 1 == num_regions {
                                         // Submit this permutation
-                                        *num_ways += fill(permutation, num_regions, 0, placements, num_placed, false, file);
+                                        *num_ways += fill(permutation, num_regions, 0, placements, num_placed);
                                     } else {
                                         // Continue adding to the permutation
-                                        permute(permutation, is_used | (1 << i), num_used + 1, regions, num_regions, placements, num_placed, file, num_ways);
+                                        permute(permutation, is_used | (1 << i), num_used + 1, regions, num_regions, placements, num_placed, num_ways);
                                     }
                                 }
                             }
                             let mut sorted_regions = [0; MAX_REGIONS];
-                            permute(&mut sorted_regions, 0, 0, &new_regions, new_num_regions, placements, new_num_placed, file, &mut num_ways);
-                        } else {
-                            // println!("Rejected for bad region size");
+                            permute(&mut sorted_regions, 0, 0, &new_regions, new_num_regions, placements, new_num_placed, &mut num_ways);
                         }
                     }
                 }
                 piece <<= 1;
-                x += 1;
                 if piece & FIRST_COL != 0 { break }
             }
             y_base <<= 7;
@@ -372,11 +291,14 @@ fn fill(regions: &[u64; MAX_REGIONS], num_regions: usize, region_index: usize, p
     num_ways
 }
 
+fn count_ways(weekday: u64, day: u64, month: u64) -> usize {
+    let mut regions = [0; MAX_REGIONS];
+    regions[0] = BASE_TO_FILL & !(weekday | day | month);
+    let mut placements = [0; NUM_PIECES];
+    fill(&regions, 1, 0, &mut placements, 0)
+}
+
 fn main() {
-    let mut regions: [u64; MAX_REGIONS] = [0; MAX_REGIONS];
-    regions[0] = TO_FILL;
-    let mut placements = [0u64; NUM_PIECES];
-    let mut file = File::create("log.txt").expect("Failed to create File");
-    let num_ways = fill(&regions, 1, 0, &mut placements, 0, true, &mut file);
+    let num_ways = count_ways(THURSDAY, day(8), JULY);
     println!("num_ways = {}", num_ways);
 }
